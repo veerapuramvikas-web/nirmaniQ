@@ -1,9 +1,9 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Building2, HardHat, Hammer, ArrowRight, Mail, Lock,
   Eye, EyeOff, MapPin,
   Layers, Quote, Search, ShoppingBag, Menu, ChevronDown,
-  Globe, Check, ExternalLink, X
+  Globe, Check, X
 } from 'lucide-react';
 import { signInWithEmail } from '../services/auth.service';
 import { showToast } from '../hooks';

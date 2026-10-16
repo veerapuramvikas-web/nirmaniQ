@@ -1,9 +1,9 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useRef } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, FolderKanban, MapPin, Receipt, Package,
   ClipboardList, AlertTriangle, FileBarChart, Users, Settings,
-  Building2, Menu, Bell, LogOut, Search, ChevronRight, CheckCircle2, Info
+  Building2, Menu, Bell, LogOut, Search, CheckCircle2, Info
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { signOut } from '../services/auth.service';
@@ -106,7 +106,7 @@ export function Layout({ children }: LayoutProps) {
       desc: `${(mo.quantity_received || 0) > 0 ? `${mo.quantity_received} ${mo.unit || ''} received` : `${mo.quantity_ordered || 0} ${mo.unit || ''} ordered`} from ${mo.supplier || 'Vendor'}.`,
       time: getRelativeTime(mo.updated_at || mo.created_at),
       unread: !readIds.has(`mat_${mo.id}`),
-      type: (mo.status === 'received' ? 'success' : 'info') as const,
+      type: (mo.status === 'received' ? 'success' : 'info') as 'alert' | 'success' | 'info',
       link: '/materials'
     })),
 
@@ -128,7 +128,7 @@ export function Layout({ children }: LayoutProps) {
       desc: `₹${Number(exp.amount || 0).toLocaleString('en-IN')} for ${exp.category || 'General'}.`,
       time: getRelativeTime(exp.created_at),
       unread: !readIds.has(`exp_${exp.id}`),
-      type: (exp.status === 'pending_approval' ? 'alert' : 'success') as const,
+      type: (exp.status === 'pending_approval' ? 'alert' : 'success') as 'alert' | 'success' | 'info',
       link: '/expenses'
     }))
   ].slice(0, 8); // Top 8 live database alerts
