@@ -52,6 +52,23 @@ export async function createIssue(
     .single();
 
   if (error) throw error;
+
+  // Trigger Push Notification if assigned to a team member
+  if (issue?.assigned_to) {
+    import('./pushNotification.service').then(({ triggerPushNotification }) => {
+      triggerPushNotification({
+        receiverId: issue.assigned_to,
+        title: `New Site Issue: ${issue.title}`,
+        message: `${(issue.priority || 'medium').toUpperCase()} priority issue reported: ${issue.description?.slice(0, 80) || ''}`,
+        type: 'issue',
+        url: `/issues/${issue.id}`,
+        relatedEntityId: issue.id,
+      }).catch(err => {
+        console.warn('[IssueService] Failed to trigger push notification:', err);
+      });
+    });
+  }
+
   return issue;
 }
 

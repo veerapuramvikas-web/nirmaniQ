@@ -1,15 +1,22 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, FolderKanban, MapPin, Receipt, Package,
   ClipboardList, AlertTriangle, FileBarChart, Users, Settings,
-  Building2, Menu, Bell, LogOut, Search, CheckCircle2, Info
+  Building2, Menu, Bell, BellRing, BellOff, LogOut, Search, CheckCircle2, Info, Download
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { signOut } from '../services/auth.service';
 import { roleLabel } from '../utils';
 import { showToast, useExpenses, useMaterials, useDailyReports, useIssues } from '../hooks';
 import { OfflineBanner } from './shared';
+import {
+  isPushSupported,
+  subscribeUserToPush,
+  unsubscribeUserFromPush,
+  getExistingSubscription,
+  setAppBadge,
+} from '../services/pushNotification.service';
 
 interface NavItem {
   to: string;
@@ -157,9 +164,104 @@ export function Layout({ children }: LayoutProps) {
     });
   };
 
+  const [isPushActive, setIsPushActive] = useState(false);
+  const [pushLoading, setPushLoading] = useState(false);
+
+  // Synchronize App Icon Badge whenever unread count changes
+  useEffect(() => {
+    setAppBadge(unreadCount).catch(() => {});
+  }, [unreadCount]);
+
+  // PWA Install Prompt State
+  const [installPrompt, setInstallPrompt] = useState<any>(null);
+  const [isStandalone, setIsStandalone] = useState(() => {
+    return (
+      window.matchMedia('(display-mode: standalone)').matches ||
+      (window.navigator as any).standalone === true
+    );
+  });
+
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      setInstallPrompt(e);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
+  }, []);
+
+  const handleInstallApp = async () => {
+    if (installPrompt) {
+      installPrompt.prompt();
+      const choice = await installPrompt.userChoice;
+      if (choice.outcome === 'accepted') {
+        showToast('NirmaniQ installed successfully!', 'success');
+        setIsStandalone(true);
+      }
+      setInstallPrompt(null);
+    } else {
+      showToast('To install, tap browser menu (⋮ or Share) -> "Install / Add to Home screen"', 'info');
+    }
+  };
+
+  // Check initial Push Subscription status
+  useEffect(() => {
+    if (isPushSupported()) {
+      getExistingSubscription().then(sub => {
+        setIsPushActive(!!sub);
+      });
+    }
+  }, []);
+
+  // Listen for navigation messages sent by Service Worker on notification click
+  useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      const handleMessage = (event: MessageEvent) => {
+        if (event.data?.type === 'NOTIFICATION_CLICKED' && event.data.url) {
+          navigate(event.data.url);
+        }
+      };
+      navigator.serviceWorker.addEventListener('message', handleMessage);
+      return () => {
+        navigator.serviceWorker.removeEventListener('message', handleMessage);
+      };
+    }
+  }, [navigate]);
+
+  const handleTogglePush = async () => {
+    setPushLoading(true);
+    try {
+      if (isPushActive) {
+        const ok = await unsubscribeUserFromPush();
+        if (ok) {
+          setIsPushActive(false);
+          showToast('Web Push notifications turned off', 'info');
+        } else {
+          showToast('Failed to unsubscribe', 'error');
+        }
+      } else {
+        const res = await subscribeUserToPush(user?.id);
+        if (res.success) {
+          setIsPushActive(true);
+          showToast('Web Push notifications enabled for this device', 'success');
+        } else {
+          showToast(res.error || 'Failed to enable push notifications', 'warning');
+        }
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Push registration failed', 'error');
+    } finally {
+      setPushLoading(false);
+    }
+  };
+
   const handleSignOut = async () => {
     try {
       setUserMenuOpen(false);
+      await unsubscribeUserFromPush().catch(() => {});
       localStorage.removeItem('nirmaniq-demo-session');
       window.dispatchEvent(new Event('nirmaniq-auth-changed'));
       await signOut();
@@ -616,6 +718,32 @@ export function Layout({ children }: LayoutProps) {
 
           {/* Right Header Controls (Interactive Notification Bell Circle + Profile Avatar) */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0, position: 'relative' }}>
+            {/* PWA Install App Button */}
+            {!isStandalone && (
+              <button
+                onClick={handleInstallApp}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '7px 12px',
+                  borderRadius: 8,
+                  background: '#f59e0b',
+                  color: '#111827',
+                  border: 'none',
+                  fontSize: '0.78rem',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 6px rgba(245, 158, 11, 0.3)',
+                  transition: 'transform 0.1s ease',
+                }}
+                title="Install NirmaniQ as Mobile/Desktop App"
+              >
+                <Download size={14} strokeWidth={2.5} />
+                <span>Install App</span>
+              </button>
+            )}
+
             {/* Notification Bell Circle with Active Modal / Panel */}
             <div style={{ position: 'relative' }}>
               <button
@@ -760,6 +888,43 @@ export function Layout({ children }: LayoutProps) {
                         </div>
                       ))
                     )}
+                  </div>
+
+                  {/* Web Push Subscription Toggle & Status */}
+                  <div style={{
+                    padding: '10px 16px',
+                    borderTop: '1px solid #f4f4f5',
+                    background: '#fafafa',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      {isPushActive ? (
+                        <BellRing size={16} color="#16a34a" />
+                      ) : (
+                        <BellOff size={16} color="#71717a" />
+                      )}
+                      <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#374151' }}>
+                        {isPushActive ? 'Push Notifications: ON' : 'Push Notifications: OFF'}
+                      </span>
+                    </div>
+                    <button
+                      disabled={pushLoading}
+                      onClick={handleTogglePush}
+                      style={{
+                        padding: '4px 10px',
+                        fontSize: '0.72rem',
+                        fontWeight: 700,
+                        borderRadius: 6,
+                        border: '1px solid #d4d4d8',
+                        background: isPushActive ? '#ffffff' : '#111111',
+                        color: isPushActive ? '#dc2626' : '#ffffff',
+                        cursor: pushLoading ? 'wait' : 'pointer'
+                      }}
+                    >
+                      {pushLoading ? '...' : isPushActive ? 'Disable' : 'Enable'}
+                    </button>
                   </div>
 
                   <div style={{
